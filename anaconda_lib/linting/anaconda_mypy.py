@@ -60,7 +60,7 @@ class MyPy(object):
         logging.info('calling mypy with %s' % str(all_args))
 
         (out, err, status) = mypyApi.run(all_args)
-		
+        
         if err is not None and len(err) > 0:
             raise RuntimeError(err)
 
@@ -74,17 +74,19 @@ class MyPy(object):
             filename = data[0]
             if not self.filename.endswith(filename):
                 continue
-
-            errors.append({
-                'level': 'W',
-                'lineno': int(data[1]),
-                'offset': 0,
-                'code': ' ',
-                'raw_error': '[W] MyPy {0}: {1}'.format(
-                    data[2], data[3]
-                ),
-                'message': '[W] MyPy%s: %s',
-                'underline_range': True
-            })
+            try:
+                errors.append({
+                    'level': 'W',
+                    'lineno': int(data[1]),
+                    'offset': 0,
+                    'code': ' ',
+                    'raw_error': '[W] MyPy {0}: {1}'.format(
+                        data[2], data[3]
+                    ),
+                    'message': '[W] MyPy%s: %s',
+                    'underline_range': True
+                })
+            except IndexError:
+                pass
 
         return errors
