@@ -1,12 +1,12 @@
 import re
 from textwrap import dedent
+from inspect import Parameter
 
 from parso.python.token import PythonTokenTypes
 from parso.python import tree
 from parso.tree import search_ancestor, Leaf
 from parso import split_lines
 
-from jedi._compatibility import Parameter
 from jedi import debug
 from jedi import settings
 from jedi.api import classes
@@ -34,9 +34,7 @@ def _get_signature_param_names(signatures, positional_count, used_kwargs):
     # Add named params
     for call_sig in signatures:
         for i, p in enumerate(call_sig.params):
-            # Allow protected access, because it's a public API.
-            # TODO reconsider with Python 2 drop
-            kind = p._name.get_kind()
+            kind = p.kind
             if i < positional_count and kind == Parameter.POSITIONAL_OR_KEYWORD:
                 continue
             if kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY) \
@@ -51,8 +49,7 @@ def _must_be_kwarg(signatures, positional_count, used_kwargs):
     must_be_kwarg = True
     for signature in signatures:
         for i, p in enumerate(signature.params):
-            # TODO reconsider with Python 2 drop
-            kind = p._name.get_kind()
+            kind = p.kind
             if kind is Parameter.VAR_POSITIONAL:
                 # In case there were not already kwargs, the next param can
                 # always be a normal argument.
@@ -256,7 +253,6 @@ class Completion:
                             allowed_transitions.append('else')
 
         completion_names = []
-        current_line = self._code_lines[self._position[0] - 1][:self._position[1]]
 
         kwargs_only = False
         if any(t in allowed_transitions for t in (PythonTokenTypes.NAME,
@@ -315,6 +311,7 @@ class Completion:
                     completion_names += self._complete_inherited(is_function=False)
 
         if not kwargs_only:
+            current_line = self._code_lines[self._position[0] - 1][:self._position[1]]
             completion_names += self._complete_keywords(
                 allowed_transitions,
                 only_values=not (not current_line or current_line[-1] in ' \t.;'
@@ -343,19 +340,20 @@ class Completion:
         if stack_node.nonterminal == 'funcdef':
             context = get_user_context(self._module_context, self._position)
             node = search_ancestor(leaf, 'error_node', 'funcdef')
-            if node.type == 'error_node':
-                n = node.children[0]
-                if n.type == 'decorators':
-                    decorators = n.children
-                elif n.type == 'decorator':
-                    decorators = [n]
+            if node is not None:
+                if node.type == 'error_node':
+                    n = node.children[0]
+                    if n.type == 'decorators':
+                        decorators = n.children
+                    elif n.type == 'decorator':
+                        decorators = [n]
+                    else:
+                        decorators = []
                 else:
-                    decorators = []
-            else:
-                decorators = node.get_decorators()
-            function_name = stack_node.nodes[1]
+                    decorators = node.get_decorators()
+                function_name = stack_node.nodes[1]
 
-            return complete_param_names(context, function_name.value, decorators)
+                return complete_param_names(context, function_name.value, decorators)
         return []
 
     def _complete_keywords(self, allowed_transitions, only_values):
@@ -455,7 +453,7 @@ class Completion:
         relevant_code_lines = list(iter_relevant_lines(code_lines))
         if relevant_code_lines[-1] is not None:
             # Some code lines might be None, therefore get rid of that.
-            relevant_code_lines = [c or '\n' for c in relevant_code_lines]
+            relevant_code_lines = ['\n' if c is None else c for c in relevant_code_lines]
             return self._complete_code_lines(relevant_code_lines)
         match = re.search(r'`([^`\s]+)', code_lines[-1])
         if match:
@@ -578,8 +576,8 @@ def _complete_getattr(user_context, instance):
     will write it like this anyway and the other ones, well they are just
     out of luck I guess :) ~dave.
     """
-    names = (instance.get_function_slot_names(u'__getattr__')
-             or instance.get_function_slot_names(u'__getattribute__'))
+    names = (instance.get_function_slot_names('__getattr__')
+             or instance.get_function_slot_names('__getattribute__'))
     functions = ValueSet.from_sets(
         name.infer()
         for name in names
